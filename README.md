@@ -1,6 +1,6 @@
 # trackremover
 
-This is a simple script that when called will ask you which track number to remove in an mkv file.
+This is a simple script that when called will ask you which track number to remove in a directory mkv files.
 
 Why?
 
