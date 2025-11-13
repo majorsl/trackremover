@@ -14,8 +14,19 @@ if [[ ! -d "$TARGET_DIR" ]]; then
     exit 1
 fi
 
-read -p "🎯 Which track number do you want to remove? " TRACK_NUM
+FIRST_FILE=$(ls "$TARGET_DIR"/*.mkv 2>/dev/null | head -n 1)
+if [[ -z "$FIRST_FILE" ]]; then
+    echo "❌ No MKV files found in '$TARGET_DIR'."
+    exit 1
+fi
 
+echo "🎬 Inspecting first file: $(basename "$FIRST_FILE")"
+echo "------------------------------------------------------------"
+ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_tags=language,title \
+    -of csv=p=0 "$FIRST_FILE" | nl -v 0
+echo "------------------------------------------------------------"
+
+read -p "🎯 Enter the track number you want to remove from ALL files: " TRACK_NUM
 if [[ -z "$TRACK_NUM" ]]; then
     echo "❌ No track number entered. Exiting."
     exit 1
@@ -23,33 +34,34 @@ fi
 
 shopt -s nullglob
 COUNT=0
-TOTAL=$(ls "$TARGET_DIR"/*.mkv 2>/dev/null | wc -l)
+FILES=("$TARGET_DIR"/*.mkv)
+TOTAL=${#FILES[@]}
 
-for FILE in "$TARGET_DIR"/*.mkv; do
+for FILE in "${FILES[@]}"; do
     ((COUNT++))
     TMP_FILE="${FILE%.mkv}_tmp.mkv"
 
-    echo "🔄 [$COUNT/$TOTAL] Processing '$FILE'... removing track $TRACK_NUM"
+    echo "🔄 [$COUNT/$TOTAL] Processing '$(basename "$FILE")'... removing track $TRACK_NUM"
 
-    # Build map options: include all streams except the one to remove
+    # Get total stream count
+    STREAM_COUNT=$(ffprobe -v error -show_entries stream=index -of csv=p=0 "$FILE" | wc -l)
+
+    # Build -map arguments (include all except the chosen one)
     MAP_ARGS=()
-    STREAM_COUNT=$(ffprobe -v error -select_streams a:v:s -show_entries stream=index -of csv=p=0 "$FILE" | wc -l)
-    
     for i in $(seq 0 $((STREAM_COUNT-1))); do
         if [[ "$i" -ne "$TRACK_NUM" ]]; then
             MAP_ARGS+=("-map" "0:$i")
         fi
     done
 
-    # Copy all streams without re-encoding
-    ffmpeg -y -i "$FILE" "${MAP_ARGS[@]}" -c copy "$TMP_FILE"
-
+    ffmpeg -hide_banner -loglevel warning -y -i "$FILE" "${MAP_ARGS[@]}" -c copy "$TMP_FILE"
     if [[ $? -eq 0 ]]; then
         mv "$TMP_FILE" "$FILE"
-        echo "✅ Successfully updated '$FILE'"
+        echo "✅ Successfully updated '$(basename "$FILE")'"
     else
-        echo "⚠️ Failed to process '$FILE'. Temporary file left as '$TMP_FILE'."
+        echo "⚠️ Failed to process '$(basename "$FILE")'. Temporary file left as '$TMP_FILE'."
     fi
 done
 
+echo
 echo "🎉 All done! Processed $COUNT files."
